@@ -4,7 +4,7 @@
 // @name:zh-TW   本地表格數據篩選
 // @name:en      Filter tabular data
 // @namespace    http://tampermonkey.net/
-// @version      1.0.0
+// @version      1.0.1
 // @license      GPL-3.0
 // @author       ShineByPupil
 // @description  获取<table>标签的表格元素，根据表头形成筛选列表，本地对数据进行筛选
@@ -79,9 +79,11 @@
    *
    */
   function init() {
-    console.log("加载表格筛选");
-    renderCSS();
-    findTable();
+    window.addEventListener("load", function (event) {
+      console.log("加载表格筛选");
+      renderCSS();
+      findTable();
+    });
   }
   /**
    * 在页面上查找所有的表格，并为每个表格添加一个按钮，当点击该按钮时，会打开搜索对话框。
@@ -98,7 +100,8 @@
           tableDOM.querySelector("tbody")
         ) {
           const btn = document.createElement("button");
-          btn.innerHTML = "打开弹窗";
+          btn.innerHTML = "F";
+          btn.title = "打开筛选弹窗";
           btn.onclick = () => showSearchDialog(tableDOM);
 
           tableDOM.appendChild(btn);
@@ -108,6 +111,12 @@
             position: "absolute",
             top: "0",
             left: "0",
+            with: "20px",
+            height: "20px",
+            lineHeight: "20px",
+            padding: "0 4px",
+            backgroundColor: "#fff",
+            border: "1px solid #409eff",
           };
           Object.keys(btn_style).forEach((key) => {
             btn.style[key] = btn_style[key];
@@ -170,8 +179,10 @@
       let filterMap = new Map(); // 过滤器映射
       for (let i = 0; i < dp.length; i++) {
         for (let j = 0; j < dp[i].length; j++) {
-          filterMap.has(dp[i][j]) || filterMap.set(dp[i][j], new Set());
-          filterMap.get(dp[i][j]).add(j);
+          if (dp[i][j]) {
+            filterMap.has(dp[i][j]) || filterMap.set(dp[i][j], new Set());
+            filterMap.get(dp[i][j]).add(j);
+          }
         }
       }
 
@@ -329,7 +340,7 @@
           .join("")}
         </select>
   
-        <input type="text" name="name" required />
+        <input type="text"/>
   
         <span class="del">删除</span>
       </div>
@@ -355,7 +366,12 @@
       });
 
       return new Promise((resolve, reject) => {
-        flag ? resolve() : reject();
+        if (flag) {
+          resolve();
+        } else {
+          utils.showMessage("表单验证未通过");
+          reject(new Error("表单验证未通过"));
+        }
       });
     }
     /**
@@ -430,25 +446,19 @@
         rulse_AND.length &&
         rulse_AND.every((rule) => {
           const { keyword, colIndexs } = rule;
-          return colIndexs.some((index) =>
-            keyword ? trData[index].includes(keyword) : true
-          );
+          return colIndexs.some((index) => trData?.[index]?.includes(keyword));
         });
       const isVisible_OR =
         rulse_OR.length &&
         rulse_OR.some((rule) => {
           const { keyword, colIndexs } = rule;
-          return colIndexs.some((index) =>
-            keyword ? trData[index].includes(keyword) : true
-          );
+          return colIndexs.some((index) => trData?.[index]?.includes(keyword));
         });
       const isVisible_NOT =
         rulse_NOT.length &&
         rulse_NOT.every((rule) => {
           const { keyword, colIndexs } = rule;
-          return !colIndexs.some((index) =>
-            keyword ? trData[index].includes(keyword) : true
-          );
+          return !colIndexs.some((index) => trData?.[index]?.includes(keyword));
         });
 
       return isVisible_AND || isVisible_OR || isVisible_NOT;
@@ -462,7 +472,7 @@
      */
     function handleFilter() {
       const rules = getRules();
-      const trList = tableDOM.querySelector("tbody").childNodes;
+      const trList = Array.from(tableDOM.querySelector("tbody").children);
       let count = 0;
 
       if (Object.values(rules).flat().length) {
@@ -483,6 +493,17 @@
       }
     }
 
+    form.addEventListener("submit", (event) => {
+      event.preventDefault();
+      validate()
+        .then(() => {
+          handleFilter();
+          searchDialogDOM._hidden();
+        })
+        .catch((e) => {
+          console.error(e.message);
+        });
+    });
     formDOM.addEventListener("click", (event) => {
       if (event.target.className.includes("add")) {
         form.appendChild(inputDOM.cloneNode(true));
@@ -512,8 +533,8 @@
                 handleFilter();
                 searchDialogDOM._hidden();
               })
-              .catch(() => {
-                utils.showMessage("表单验证未通过");
+              .catch((e) => {
+                console.error(e.message);
               });
             break;
           case "reset":
