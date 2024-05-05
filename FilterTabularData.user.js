@@ -509,6 +509,24 @@
           console.error(e.message);
         });
     });
+    formDOM.addEventListener("wheel", (event) => {
+      if (event.target.tagName === "SELECT") {
+        event.preventDefault();
+
+        const length = event.target.options.length;
+        const index = event.target.selectedIndex;
+        const direction = event.wheelDeltaY > 0 ? "up" : "down";
+
+        event.target.selectedIndex =
+          direction === "up"
+            ? index === 0
+              ? length - 1
+              : index - 1
+            : index === length - 1
+            ? 0
+            : index + 1;
+      }
+    });
     formDOM.addEventListener("click", (event) => {
       if (event.target.className.includes("add")) {
         form.appendChild(inputDOM.cloneNode(true));
