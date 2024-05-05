@@ -4,7 +4,7 @@
 // @name:zh-TW   本地表格數據篩選
 // @name:en      Filter tabular data
 // @namespace    http://tampermonkey.net/
-// @version      1.0.1
+// @version      1.0.2
 // @license      GPL-3.0
 // @author       ShineByPupil
 // @description  获取<table>标签的表格元素，根据表头形成筛选列表，本地对数据进行筛选
@@ -229,9 +229,13 @@
         <div class="content scroll-bar"></div>
   
         <div class="searchDialog__footer">
-          <input type="button" class="confirmBtn primary" value="确定"></input>
-          <input type="button" class="closeBtn" value="取消"></input>
+          <label>
+            <input type="checkbox" checked/>
+            <span style="margin-left: 4px">查询后不关闭</span>
+          </label>
           <input type="button" class="resetBtn" value="重置"></input>
+          <input type="button" class="closeBtn" value="取消"></input>
+          <input type="button" class="confirmBtn primary" value="确定"></input>
         </div>
       </div>
     `);
@@ -271,8 +275,9 @@
         );
       } else if (className.includes("confirmBtn")) {
         // 确定
+        const notClose = dialog.querySelector("input[type=checkbox]").checked;
         document.dispatchEvent(
-          new CustomEvent("btnEvent", { detail: { type: "confirm" } })
+          new CustomEvent("btnEvent", { detail: { type: "confirm", notClose } })
         );
       }
     });
@@ -531,7 +536,9 @@
             validate()
               .then(() => {
                 handleFilter();
-                searchDialogDOM._hidden();
+                if (!event?.detail?.notClose) {
+                  searchDialogDOM._hidden();
+                }
               })
               .catch((e) => {
                 console.error(e.message);
@@ -678,7 +685,15 @@
       #searchDialog .searchDialog__footer {
         padding: 10px;
         display: flex;
-        flex-direction: row-reverse;
+        justify-content: flex-end;
+        align-items: center;
+        user-select: none;
+      }
+      #searchDialog .searchDialog__footer > label {
+        display: flex;
+      }
+      #searchDialog .searchDialog__footer > label > * {
+        cursor: pointer;
       }
       /* CSS 过渡效果 */
       #searchDialog.fade-in {
@@ -759,7 +774,7 @@
   
       /* 组件样式 */
       #searchDialog select,
-      #searchDialog input {
+      #searchDialog input[type='text'] {
         box-sizing: border-box;
         height: 32px;
         padding: 4px 11px;
