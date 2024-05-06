@@ -145,7 +145,7 @@
         header.push(
           Array.from(trDOM.querySelectorAll("th")).map((n) => {
             return {
-              label: n.innerText.replaceAll("\n", "<br>"),
+              label: n.textContent,
               rowspan: n.rowSpan ?? 1, // 高度
               colspan: n.colSpan ?? 1, // 宽度
             };
@@ -158,7 +158,7 @@
         return Array.from(tableDOM.querySelectorAll("tbody tr")).map(
           (trDOM) => {
             return Array.from(trDOM.querySelectorAll("td")).map((n) => {
-              return n.innerText.replaceAll("\n", "<br>");
+              return n.textContent;
             });
           }
         );
@@ -173,7 +173,7 @@
 
           for (let k = i; k < i + rowspan; k++) {
             for (let l = index; l < index + colspan; l++) {
-              dp[k][l] ??= td.label.replaceAll("<br>", "");
+              dp[k][l] ??= td.label;
             }
           }
         });
