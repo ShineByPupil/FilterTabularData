@@ -138,9 +138,9 @@
      * @return {Object} 包含解析后的数据、表头、过滤器映射和表单 DOM 的对象。
      */
     function parse(tableDOM) {
-      let data = []; // 表格数据
       let header = []; // 表头数据
 
+      // 解析表头
       tableDOM.querySelectorAll("thead tr").forEach((trDOM) => {
         header.push(
           Array.from(trDOM.querySelectorAll("th")).map((n) => {
@@ -153,13 +153,16 @@
         );
       });
 
-      tableDOM.querySelectorAll("tbody tr").forEach((trDOM) => {
-        data.push(
-          Array.from(trDOM.querySelectorAll("td")).map((n) => {
-            return n.innerText.replaceAll("\n", "<br>");
-          })
+      // 每次筛选时，动态解析表格数据，防止表格排序导致顺序变化
+      const getData = () => {
+        return Array.from(tableDOM.querySelectorAll("tbody tr")).map(
+          (trDOM) => {
+            return Array.from(trDOM.querySelectorAll("td")).map((n) => {
+              return n.innerText.replaceAll("\n", "<br>");
+            });
+          }
         );
-      });
+      };
 
       let dp = new Array(header.length).fill(0).map((n) => new Array()); // 多级表头结构
 
@@ -186,10 +189,10 @@
         }
       }
 
-      const formDOM = renderForm({ filterMap, data, tableDOM });
+      const formDOM = renderForm({ filterMap, getData, tableDOM });
 
       return weakMap
-        .set(tableDOM, { data, header, filterMap, formDOM })
+        .set(tableDOM, { header, filterMap, formDOM })
         .get(tableDOM);
     }
 
@@ -323,7 +326,7 @@
    * @param {HTMLElement} tableDOM - 表格的 DOM 元素。
    * @return {HTMLElement} 带有筛选选项的表单的 DOM 元素。
    */
-  function renderForm({ filterMap, data, tableDOM }) {
+  function renderForm({ filterMap, getData, tableDOM }) {
     const formDOM = utils.createNode(`
       <article class="filter_form">
         <span class="add">添加</span>
@@ -476,6 +479,7 @@
      * @return {void} 此函数不返回任何内容。
      */
     function handleFilter() {
+      const data = getData();
       const rules = getRules();
       const trList = Array.from(tableDOM.querySelector("tbody").children);
       let count = 0;
@@ -664,6 +668,7 @@
   
       /* 弹窗样式 */
       #searchDialog {
+        font-size: 12px;
         font-family: "Microsoft YaHei", sans-serif;
         display: flex;
         z-index: 9999;
@@ -773,13 +778,13 @@
       #searchDialog article.filter_form form .form-example > * {
         margin: 0 4px;
       }
-      #searchDialog article.filter_form form .form-example input {
+      #searchDialog article.filter_form form .form-example input[type='text'] {
         flex: 1;
       }
-      #searchDialog article.filter_form form .form-example input.error {
+      #searchDialog article.filter_form form .form-example input[type='text'].error {
         border-color: red;
       }
-      #searchDialog article.filter_form form .form-example input.shake {
+      #searchDialog article.filter_form form .form-example input[type='text'].shake {
         animation: shake 0.6s ease-in-out 1;
       }
       @keyframes shake {
