@@ -649,10 +649,6 @@
   function renderCSS() {
     let style = utils.createNode(`
     <style>
-      * {
-        padding: 0;
-        margin: 0;
-      }
       /* 滚动条样式 */
       .scroll-bar {
         overflow-y: scroll;
