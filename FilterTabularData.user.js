@@ -4,7 +4,7 @@
 // @name:zh-TW   本地表格數據篩選
 // @name:en      Filter tabular data
 // @namespace    http://tampermonkey.net/
-// @version      1.0.2
+// @version      1.0.3
 // @license      GPL-3.0
 // @author       ShineByPupil
 // @description  获取<table>标签的表格元素，根据表头形成筛选列表，本地对数据进行筛选
@@ -470,14 +470,21 @@
           const { keyword, colIndexs } = rule;
           return colIndexs.some((index) => trData?.[index]?.includes(keyword));
         });
-      const isVisible_NOT =
-        rulse_NOT.length &&
-        rulse_NOT.every((rule) => {
-          const { keyword, colIndexs } = rule;
-          return !colIndexs.some((index) => trData?.[index]?.includes(keyword));
-        });
+      const isVisible_NOT = rulse_NOT.length
+        ? rulse_NOT.every((rule) => {
+            const { keyword, colIndexs } = rule;
+            return !colIndexs.some((index) =>
+              trData?.[index]?.includes(keyword)
+            );
+          })
+        : true;
 
-      return isVisible_AND || isVisible_OR || isVisible_NOT;
+      return (
+        isVisible_NOT &&
+        (rulse_AND.length || rulse_OR.length
+          ? isVisible_AND || isVisible_OR
+          : true)
+      );
     };
     /**
      * 处理根据给定规则筛选表格行。如果提供了规则，
@@ -492,22 +499,17 @@
       const trList = Array.from(tableDOM.querySelector("tbody").children);
       let count = 0;
 
-      if (Object.values(rules).flat().length) {
-        // 筛选
-        data.forEach((trData, i) => {
-          if (isVisible(trData, rules)) {
-            trList[i].style.visibility = "visible";
-            count++;
-          } else {
-            trList[i].style.visibility = "collapse";
-          }
-        });
-        utils.showMessage(`搜索成功,一共查询出 ${count} 数据`);
-      } else {
-        // 重置
-        trList.forEach((tr) => (tr.style.visibility = "visible"));
-        utils.showMessage(`重置成功,一共查询出 ${trList.length} 条数据`);
-      }
+      // 筛选
+      data.forEach((trData, i) => {
+        if (isVisible(trData, rules)) {
+          trList[i].style.visibility = "visible";
+          count++;
+        } else {
+          trList[i].style.visibility = "collapse";
+        }
+      });
+
+      utils.showMessage(`搜索成功,一共查询出 ${count} 数据`);
     }
 
     form.addEventListener("submit", (event) => {
