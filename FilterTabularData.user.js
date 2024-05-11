@@ -233,7 +233,7 @@
   
         <div class="searchDialog__footer">
           <label>
-            <input type="checkbox" checked/>
+            <input class="searchDialog__notClose" type="checkbox" checked/>
             <span style="margin-left: 4px">查询后不关闭</span>
           </label>
           <input type="button" class="resetBtn" value="重置"></input>
@@ -278,10 +278,14 @@
         );
       } else if (className.includes("confirmBtn")) {
         // 确定
-        const notClose = dialog.querySelector("input[type=checkbox]").checked;
+        const notClose = dialog.querySelector(
+          "input[type=checkbox].searchDialog__notClose"
+        ).checked;
         document.dispatchEvent(
           new CustomEvent("btnEvent", { detail: { type: "confirm", notClose } })
         );
+      } else if (tagName === "INPUT" && target.type === "checkbox") {
+        target.parentElement.classList.toggle("active");
       }
     });
     // 监听键盘按下事件
@@ -335,7 +339,9 @@
       </article>
     `);
     const inputDOM = utils.createNode(`
-      <div class="form-example">
+      <div class="form-example active">
+        <input type="checkbox" checked>
+
         <select>
           <option label="AND" value="AND"></option>
           <option label="OR" value="OR"></option>
@@ -364,8 +370,8 @@
       let flag = true;
 
       form.childNodes.forEach((node) => {
-        const [, , input] = node.children;
-        if (!input.value) {
+        const [checkbox, , , input] = node.children;
+        if (checkbox.checked && !input.value) {
           flag = false;
           input.classList.add("error", "shake");
         } else {
@@ -398,27 +404,29 @@
       const rulse_NOT = [];
 
       form.childNodes.forEach((node) => {
-        const [select1, select2, input] = node.children;
+        const [checkbox, select1, select2, input] = node.children;
 
-        switch (select1.value) {
-          case "AND":
-            rulse_AND.push({
-              keyword: input.value,
-              colIndexs: Array.from(filterMap.get(select2.value)),
-            });
-            break;
-          case "OR":
-            rulse_OR.push({
-              keyword: input.value,
-              colIndexs: Array.from(filterMap.get(select2.value)),
-            });
-            break;
-          case "NOT":
-            rulse_NOT.push({
-              keyword: input.value,
-              colIndexs: Array.from(filterMap.get(select2.value)),
-            });
-            break;
+        if (checkbox.checked) {
+          switch (select1.value) {
+            case "AND":
+              rulse_AND.push({
+                keyword: input.value,
+                colIndexs: Array.from(filterMap.get(select2.value)),
+              });
+              break;
+            case "OR":
+              rulse_OR.push({
+                keyword: input.value,
+                colIndexs: Array.from(filterMap.get(select2.value)),
+              });
+              break;
+            case "NOT":
+              rulse_NOT.push({
+                keyword: input.value,
+                colIndexs: Array.from(filterMap.get(select2.value)),
+              });
+              break;
+          }
         }
       });
 
@@ -786,6 +794,10 @@
       }
       #searchDialog article.filter_form form .form-example input[type='text'].shake {
         animation: shake 0.6s ease-in-out 1;
+      }
+      #searchDialog article.filter_form form .form-example:not(.active) * {
+        border-color: #d9d9d9;
+        color: #d9d9d9;
       }
       @keyframes shake {
         0% { transform: translateX(0); }
