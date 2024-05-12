@@ -361,6 +361,17 @@
     `);
     const form = formDOM.querySelector("form");
 
+    function formTrim() {
+      form.querySelectorAll("input[type=text]").forEach((input) => {
+        input.value = input.value.includes(",")
+          ? input.value
+              .split(",")
+              .map((n) => n.trim())
+              .filter((n) => n)
+              .join(", ")
+          : input.value.trim();
+      });
+    }
     /**
      * 验证表单，检查所有输入字段是否有值。
      *
@@ -407,24 +418,20 @@
         const [checkbox, select1, select2, input] = node.children;
 
         if (checkbox.checked) {
+          const rules = input.value.split(",").map((keyword) => ({
+            keyword: keyword.trim(),
+            colIndexs: Array.from(filterMap.get(select2.value)),
+          }));
+
           switch (select1.value) {
             case "AND":
-              rulse_AND.push({
-                keyword: input.value,
-                colIndexs: Array.from(filterMap.get(select2.value)),
-              });
+              rulse_AND.push(...rules);
               break;
             case "OR":
-              rulse_OR.push({
-                keyword: input.value,
-                colIndexs: Array.from(filterMap.get(select2.value)),
-              });
+              rulse_OR.push(...rules);
               break;
             case "NOT":
-              rulse_NOT.push({
-                keyword: input.value,
-                colIndexs: Array.from(filterMap.get(select2.value)),
-              });
+              rulse_NOT.push(...rules);
               break;
           }
         }
@@ -512,16 +519,16 @@
       utils.showMessage(`搜索成功,一共查询出 ${count} 数据`);
     }
 
-    form.addEventListener("submit", (event) => {
-      event.preventDefault();
-      validate()
-        .then(() => {
-          handleFilter();
-          searchDialogDOM._hidden();
-        })
-        .catch((e) => {
-          console.error(e.message);
-        });
+    form.addEventListener("submit", async (event) => {
+      try {
+        event.preventDefault();
+        formTrim();
+        await validate();
+        handleFilter();
+        searchDialogDOM._hidden();
+      } catch (e) {
+        console.error(e);
+      }
     });
     formDOM.addEventListener("wheel", (event) => {
       if (event.target.tagName === "SELECT") {
@@ -561,20 +568,21 @@
           : event.target.classList.add("error");
       }
     });
-    document.addEventListener("btnEvent", (event) => {
+    document.addEventListener("btnEvent", async (event) => {
       if (formDOM.parentElement) {
         switch (event?.detail?.type) {
           case "confirm":
-            validate()
-              .then(() => {
-                handleFilter();
-                if (!event?.detail?.notClose) {
-                  searchDialogDOM._hidden();
-                }
-              })
-              .catch((e) => {
-                console.error(e.message);
-              });
+            try {
+              formTrim();
+              await validate();
+              handleFilter();
+              if (!event?.detail?.notClose) {
+                searchDialogDOM._hidden();
+              }
+            } catch (e) {
+              console.error(e);
+            }
+
             break;
           case "reset":
             form.innerHTML = "";
