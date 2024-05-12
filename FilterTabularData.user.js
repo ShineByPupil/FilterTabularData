@@ -4,7 +4,7 @@
 // @name:zh-TW   本地表格數據篩選
 // @name:en      Filter tabular data
 // @namespace    http://tampermonkey.net/
-// @version      1.0.3
+// @version      1.0.4
 // @license      GPL-3.0
 // @author       ShineByPupil
 // @description  获取<table>标签的表格元素，根据表头形成筛选列表，本地对数据进行筛选
@@ -99,30 +99,18 @@
           tableDOM.querySelector("thead") &&
           tableDOM.querySelector("tbody")
         ) {
-          const btn = document.createElement("button");
-          btn.innerHTML = "F";
-          btn.title = "打开筛选弹窗";
+          const thead = tableDOM.querySelector("thead");
+          const scrollDOM = utils.createNode(
+            `<div class="filter-table"></div>`
+          );
+          tableDOM.parentElement.insertBefore(scrollDOM, tableDOM);
+          tableDOM.remove();
+          scrollDOM.appendChild(tableDOM);
+          const btn = utils.createNode(
+            `<button class="open-filter-Dialog-btn" title="打开筛选弹窗">F</button>`
+          );
+          thead.appendChild(btn);
           btn.onclick = () => showSearchDialog(tableDOM);
-
-          tableDOM.appendChild(btn);
-          tableDOM.style.position = "relative";
-
-          const btn_style = {
-            position: "absolute",
-            top: "0",
-            left: "0",
-            with: "20px",
-            height: "20px",
-            lineHeight: "20px",
-            padding: "0 4px",
-            backgroundColor: "#fff",
-            border: "1px solid #409eff",
-          };
-          Object.keys(btn_style).forEach((key) => {
-            btn.style[key] = btn_style[key];
-          });
-        } else {
-          console.log("没有找到表格:", tableDOM);
         }
       });
     }
@@ -236,6 +224,7 @@
             <input class="searchDialog__notClose" type="checkbox" checked/>
             <span style="margin-left: 4px">查询后不关闭</span>
           </label>
+          <input type="button" class="setMaxHeight" value="表格最大高度开关"></input>
           <input type="button" class="resetBtn" value="重置"></input>
           <input type="button" class="closeBtn" value="取消"></input>
           <input type="button" class="confirmBtn primary" value="确定"></input>
@@ -286,6 +275,10 @@
         );
       } else if (tagName === "INPUT" && target.type === "checkbox") {
         target.parentElement.classList.toggle("active");
+      } else if (className.includes("setMaxHeight")) {
+        document.dispatchEvent(
+          new CustomEvent("btnEvent", { detail: { type: "setMaxHeight" } })
+        );
       }
     });
     // 监听键盘按下事件
@@ -587,6 +580,11 @@
           case "reset":
             form.innerHTML = "";
             break;
+          case "setMaxHeight":
+            tableDOM.parentElement.classList.toggle("scroll-bar")
+              ? utils.showMessage("设置滚动条")
+              : utils.showMessage("恢复原状");
+            break;
         }
       }
     });
@@ -678,6 +676,32 @@
       }
       .scroll-bar::-webkit-scrollbar-thumb:hover {
         background-color: #555;
+      }
+
+      /* 表格样式 */
+      .filter-table {
+        display: inline-block;
+      }
+      .filter-table.scroll-bar {
+        max-height: 80vh;
+      }
+      .filter-table table {
+        margin: 0;
+      }
+      .filter-table table thead {
+        position: sticky;
+        top: 0;
+      }
+      .filter-table button.open-filter-Dialog-btn {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 20px;
+        height: 20px;
+        line-height: 20px;
+        padding: 0 4px;
+        background-color: #fff;
+        border: 1px solid #409eff;
       }
   
       /* 弹窗样式 */
