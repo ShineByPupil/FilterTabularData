@@ -18,7 +18,7 @@
 // ==/UserScript==
 
 (function () {
-  "use strict";
+  'use strict';
 
   let searchDialogDOM = null;
   const utils = {
@@ -55,11 +55,11 @@
         document.body.appendChild(this.messageBox);
       }
       this.messageBox.textContent = message;
-      this.messageBox.style.display = "block"; // 显示消息
+      this.messageBox.style.display = 'block'; // 显示消息
 
       // 设置一定时间后自动隐藏消息
       setTimeout(() => {
-        this.messageBox.style.display = "none";
+        this.messageBox.style.display = 'none';
       }, duration);
     },
     /**
@@ -69,7 +69,7 @@
      * @return {Node} 新创建的 DOM 节点。
      */
     createNode: function (template) {
-      const div = document.createElement("div");
+      const div = document.createElement('div');
       div.innerHTML = template.trim();
       return div.firstChild;
     },
@@ -79,8 +79,8 @@
    *
    */
   function init() {
-    window.addEventListener("load", function (event) {
-      console.log("加载表格筛选");
+    window.addEventListener('load', function (event) {
+      console.log('加载表格筛选');
       renderCSS();
       findTable();
     });
@@ -92,14 +92,14 @@
    * @return {void} 该函数没有返回值。
    */
   function findTable() {
-    const tableList = document.querySelectorAll("table");
+    const tableList = document.querySelectorAll('table');
     if (tableList.length) {
-      document.querySelectorAll("table").forEach((tableDOM) => {
+      document.querySelectorAll('table').forEach((tableDOM) => {
         if (
-          tableDOM.querySelector("thead") &&
-          tableDOM.querySelector("tbody")
+          tableDOM.querySelector('thead') &&
+          tableDOM.querySelector('tbody')
         ) {
-          const thead = tableDOM.querySelector("thead");
+          const thead = tableDOM.querySelector('thead');
           const scrollDOM = utils.createNode(
             `<div class="filter-table"></div>`
           );
@@ -129,9 +129,9 @@
       let header = []; // 表头数据
 
       // 解析表头
-      tableDOM.querySelectorAll("thead tr").forEach((trDOM) => {
+      tableDOM.querySelectorAll('thead tr').forEach((trDOM) => {
         header.push(
-          Array.from(trDOM.querySelectorAll("th")).map((n) => {
+          Array.from(trDOM.querySelectorAll('th')).map((n) => {
             return {
               label: n.textContent,
               rowspan: n.rowSpan ?? 1, // 高度
@@ -143,9 +143,9 @@
 
       // 每次筛选时，动态解析表格数据，防止表格排序导致顺序变化
       const getData = () => {
-        return Array.from(tableDOM.querySelectorAll("tbody tr")).map(
+        return Array.from(tableDOM.querySelectorAll('tbody tr')).map(
           (trDOM) => {
-            return Array.from(trDOM.querySelectorAll("td")).map((n) => {
+            return Array.from(trDOM.querySelectorAll('td')).map((n) => {
               return n.textContent;
             });
           }
@@ -193,7 +193,7 @@
         ? weakMap.get(tableDOM)
         : parse(tableDOM);
 
-      const content = searchDialogDOM.querySelector(".content");
+      const content = searchDialogDOM.querySelector('.content');
 
       content.childNodes.forEach((node) => {
         content.removeChild(node);
@@ -231,85 +231,85 @@
         </div>
       </div>
     `);
-    const header = dialog.querySelector(".searchDialog__header");
+    const header = dialog.querySelector('.searchDialog__header');
 
     // 方法
     dialog._show = () => {
-      dialog.style.display = "block";
-      dialog.style.left = "calc(50% - 15vw)";
-      dialog.style.top = "10vh";
-      dialog.classList.remove("fade-out");
-      dialog.classList.add("fade-in");
+      dialog.style.display = 'block';
+      dialog.style.left = 'calc(50% - 15vw)';
+      dialog.style.top = '10vh';
+      dialog.classList.remove('fade-out');
+      dialog.classList.add('fade-in');
     };
     dialog._hidden = () => {
-      dialog.classList.add("fade-out");
-      dialog.classList.remove("fade-in");
+      dialog.classList.add('fade-out');
+      dialog.classList.remove('fade-in');
       dialog.onanimationend = () => {
-        dialog.style.display = "none";
+        dialog.style.display = 'none';
         dialog.onanimationend = null;
       };
     };
 
     // 事件
-    dialog.addEventListener("click", (event) => {
+    dialog.addEventListener('click', (event) => {
       const {
         target,
         target: { className, tagName },
       } = event;
 
-      if (className.includes("closeBtn")) {
+      if (className.includes('closeBtn')) {
         // 关闭
         dialog._hidden();
-      } else if (className.includes("resetBtn")) {
+      } else if (className.includes('resetBtn')) {
         // 重置
         document.dispatchEvent(
-          new CustomEvent("btnEvent", { detail: { type: "reset" } })
+          new CustomEvent('btnEvent', { detail: { type: 'reset' } })
         );
-      } else if (className.includes("confirmBtn")) {
+      } else if (className.includes('confirmBtn')) {
         // 确定
         const notClose = dialog.querySelector(
-          "input[type=checkbox].searchDialog__notClose"
+          'input[type=checkbox].searchDialog__notClose'
         ).checked;
         document.dispatchEvent(
-          new CustomEvent("btnEvent", { detail: { type: "confirm", notClose } })
+          new CustomEvent('btnEvent', { detail: { type: 'confirm', notClose } })
         );
-      } else if (tagName === "INPUT" && target.type === "checkbox") {
-        target.parentElement.classList.toggle("active");
-      } else if (className.includes("setMaxHeight")) {
+      } else if (tagName === 'INPUT' && target.type === 'checkbox') {
+        target.parentElement.classList.toggle('active');
+      } else if (className.includes('setMaxHeight')) {
         document.dispatchEvent(
-          new CustomEvent("btnEvent", { detail: { type: "setMaxHeight" } })
+          new CustomEvent('btnEvent', { detail: { type: 'setMaxHeight' } })
         );
       }
     });
     // 监听键盘按下事件
-    document.addEventListener("keydown", (event) => {
-      if (dialog.style.display === "block" && event.key === "Escape")
+    document.addEventListener('keydown', (event) => {
+      if (dialog.style.display === 'block' && event.key === 'Escape')
         dialog._hidden();
     });
 
     let offsetX, offsetY;
-    header.addEventListener("dragstart", (event) => {
-      event.dataTransfer.effectAllowed = "move";
+    header.addEventListener('dragstart', (event) => {
+      event.dataTransfer.effectAllowed = 'move';
 
       // 获取拖动开始时鼠标相对于拖动元素的偏移
       offsetX = event.clientX - header.getBoundingClientRect().left;
       offsetY = event.clientY - header.getBoundingClientRect().top;
     });
-    header.addEventListener("drag", function (event) {
+    header.addEventListener('drag', function (event) {
       if (event.clientX && event.clientY) {
         // 计算拖动后的位置
         const x = event.clientX - offsetX;
         const y = event.clientY - offsetY;
 
         // 设置拖动元素的新位置
-        dialog.style.left = x + "px";
-        dialog.style.top = y + "px";
+        dialog.style.left = x + 'px';
+        dialog.style.top = y + 'px';
       } else {
-        dialog.style.left = "calc(50% - 15vw)";
-        dialog.style.top = "10vh";
+        dialog.style.left = 'calc(50% - 15vw)';
+        dialog.style.top = '10vh';
       }
     });
-    header.addEventListener("dragover", function (event) {
+    header.addEventListener('dragover', function (event) {
       event.preventDefault();
     });
 
@@ -344,7 +344,7 @@
         <select>
         ${[...filterMap.keys()]
           .map((n) => `<option label="${n}" value="${n}"></option>`)
-          .join("")}
+          .join('')}
         </select>
   
         <input type="text"/>
@@ -352,16 +352,16 @@
         <span class="del">删除</span>
       </div>
     `);
-    const form = formDOM.querySelector("form");
+    const form = formDOM.querySelector('form');
 
     function formTrim() {
-      form.querySelectorAll("input[type=text]").forEach((input) => {
-        input.value = input.value.includes(",")
+      form.querySelectorAll('input[type=text]').forEach((input) => {
+        input.value = input.value.includes(',')
           ? input.value
-              .split(",")
+              .split(',')
               .map((n) => n.trim())
               .filter((n) => n)
-              .join(", ")
+              .join(', ')
           : input.value.trim();
       });
     }
@@ -377,9 +377,9 @@
         const [checkbox, , , input] = node.children;
         if (checkbox.checked && !input.value) {
           flag = false;
-          input.classList.add("error", "shake");
+          input.classList.add('error', 'shake');
         } else {
-          input.classList.remove("error");
+          input.classList.remove('error');
         }
       });
 
@@ -387,8 +387,8 @@
         if (flag) {
           resolve();
         } else {
-          utils.showMessage("表单验证未通过");
-          reject(new Error("表单验证未通过"));
+          utils.showMessage('表单验证未通过');
+          reject(new Error('表单验证未通过'));
         }
       });
     }
@@ -411,19 +411,19 @@
         const [checkbox, select1, select2, input] = node.children;
 
         if (checkbox.checked) {
-          const rules = input.value.split(",").map((keyword) => ({
+          const rules = input.value.split(',').map((keyword) => ({
             keyword: keyword.trim(),
             colIndexs: Array.from(filterMap.get(select2.value)),
           }));
 
           switch (select1.value) {
-            case "AND":
+            case 'AND':
               rulse_AND.push(...rules);
               break;
-            case "OR":
+            case 'OR':
               rulse_OR.push(...rules);
               break;
-            case "NOT":
+            case 'NOT':
               rulse_NOT.push(...rules);
               break;
           }
@@ -496,23 +496,23 @@
     function handleFilter() {
       const data = getData();
       const rules = getRules();
-      const trList = Array.from(tableDOM.querySelector("tbody").children);
+      const trList = Array.from(tableDOM.querySelector('tbody').children);
       let count = 0;
 
       // 筛选
       data.forEach((trData, i) => {
         if (isVisible(trData, rules)) {
-          trList[i].style.visibility = "visible";
+          trList[i].style.visibility = 'visible';
           count++;
         } else {
-          trList[i].style.visibility = "collapse";
+          trList[i].style.visibility = 'collapse';
         }
       });
 
       utils.showMessage(`搜索成功,一共查询出 ${count} 数据`);
     }
 
-    form.addEventListener("submit", async (event) => {
+    form.addEventListener('submit', async (event) => {
       try {
         event.preventDefault();
         formTrim();
@@ -523,16 +523,16 @@
         console.error(e);
       }
     });
-    formDOM.addEventListener("wheel", (event) => {
-      if (event.target.tagName === "SELECT") {
+    formDOM.addEventListener('wheel', (event) => {
+      if (event.target.tagName === 'SELECT') {
         event.preventDefault();
 
         const length = event.target.options.length;
         const index = event.target.selectedIndex;
-        const direction = event.wheelDeltaY > 0 ? "up" : "down";
+        const direction = event.wheelDeltaY > 0 ? 'up' : 'down';
 
         event.target.selectedIndex =
-          direction === "up"
+          direction === 'up'
             ? index === 0
               ? length - 1
               : index - 1
@@ -541,30 +541,30 @@
             : index + 1;
       }
     });
-    formDOM.addEventListener("click", (event) => {
-      if (event.target.className.includes("add")) {
+    formDOM.addEventListener('click', (event) => {
+      if (event.target.className.includes('add')) {
         form.appendChild(inputDOM.cloneNode(true));
-      } else if (event.target.className.includes("del")) {
+      } else if (event.target.className.includes('del')) {
         // 删除规则
         event.target.parentNode.remove();
       }
     });
-    formDOM.addEventListener("animationend", (event) => {
-      if (event.target.className.includes("shake")) {
-        event.target.classList.remove("shake");
+    formDOM.addEventListener('animationend', (event) => {
+      if (event.target.className.includes('shake')) {
+        event.target.classList.remove('shake');
       }
     });
-    formDOM.addEventListener("input", (event) => {
-      if (event.target.tagName === "INPUT") {
+    formDOM.addEventListener('input', (event) => {
+      if (event.target.tagName === 'INPUT') {
         event.target.value
-          ? event.target.classList.remove("error")
-          : event.target.classList.add("error");
+          ? event.target.classList.remove('error')
+          : event.target.classList.add('error');
       }
     });
-    document.addEventListener("btnEvent", async (event) => {
+    document.addEventListener('btnEvent', async (event) => {
       if (formDOM.parentElement) {
         switch (event?.detail?.type) {
-          case "confirm":
+          case 'confirm':
             try {
               formTrim();
               await validate();
@@ -577,13 +577,13 @@
             }
 
             break;
-          case "reset":
-            form.innerHTML = "";
+          case 'reset':
+            form.innerHTML = '';
             break;
-          case "setMaxHeight":
-            tableDOM.parentElement.classList.toggle("scroll-bar")
-              ? utils.showMessage("设置滚动条")
-              : utils.showMessage("恢复原状");
+          case 'setMaxHeight':
+            tableDOM.parentElement.classList.toggle('scroll-bar')
+              ? utils.showMessage('设置滚动条')
+              : utils.showMessage('恢复原状');
             break;
         }
       }
@@ -607,43 +607,43 @@
       </div>
     `);
 
-    const tableDOM = container.querySelector("table");
-    const colgroupDOM = container.querySelector("colgroup");
-    const thDOM = container.querySelector("thead");
-    const tbDOM = container.querySelector("tbody");
+    const tableDOM = container.querySelector('table');
+    const colgroupDOM = container.querySelector('colgroup');
+    const thDOM = container.querySelector('thead');
+    const tbDOM = container.querySelector('tbody');
 
     // 根据表头计算colgroup
     let i = 23;
     while (i--) {
-      let colDOM = document.createElement("col");
-      colDOM.setAttribute("width", "100px");
+      let colDOM = document.createElement('col');
+      colDOM.setAttribute('width', '100px');
       colgroupDOM.appendChild(colDOM);
     }
     window.colgroupDOM = colgroupDOM;
-    tableDOM.style.width = 23 * 100 + "px";
+    tableDOM.style.width = 23 * 100 + 'px';
 
     // 渲染表头
     header.forEach((tr) => {
-      let trDOM = document.createElement("tr");
+      let trDOM = document.createElement('tr');
       thDOM.appendChild(trDOM);
 
       tr.forEach((td) => {
-        let thDOM = document.createElement("th");
+        let thDOM = document.createElement('th');
         trDOM.appendChild(thDOM);
         thDOM.innerHTML = td.label;
 
         thDOM.rowspan = td.rowspan;
         thDOM.colspan = td.colspan;
-        thDOM.setAttribute("rowspan", td.rowspan);
-        thDOM.setAttribute("colspan", td.colspan);
+        thDOM.setAttribute('rowspan', td.rowspan);
+        thDOM.setAttribute('colspan', td.colspan);
       });
     });
 
     // 渲染表体
     dataSource.forEach((td) => {
-      let trDOM = document.createElement("tr");
+      let trDOM = document.createElement('tr');
 
-      trDOM.innerHTML = td.map((n) => `<td><p>${n}</p></td>`).join("");
+      trDOM.innerHTML = td.map((n) => `<td><p>${n}</p></td>`).join('');
       tbDOM.appendChild(trDOM);
     });
 
