@@ -679,9 +679,6 @@
       }
 
       /* 表格样式 */
-      .filter-table {
-        display: inline-block;
-      }
       .filter-table.scroll-bar {
         max-height: 80vh;
       }
