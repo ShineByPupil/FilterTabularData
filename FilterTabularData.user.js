@@ -683,7 +683,6 @@
         max-height: 80vh;
       }
       .filter-table table {
-        margin: 0;
       }
       .filter-table table thead {
         position: sticky;
