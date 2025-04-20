@@ -4,7 +4,7 @@
 // @name:zh-TW   本地表格數據篩選
 // @name:en      Filter tabular data
 // @namespace    http://tampermonkey.net/
-// @version      1.0.4
+// @version      2.0.0
 // @license      GPL-3.0
 // @author       ShineByPupil
 // @description  获取<table>标签的表格元素，根据表头形成筛选列表，本地对数据进行筛选
@@ -18,145 +18,786 @@
 // ==/UserScript==
 
 (function () {
-  'use strict';
+  "use strict";
 
-  let searchDialogDOM = null;
-  const utils = {
-    /**
-     * 在数组中查找第一个空单元的索引。
-     *
-     * @param {Array} array - 要查找empty的数组。
-     * @return {number} 第一个empty的索引，如果没有找到空单元则返回数组的长度。
-     */
-    findEmptyIndex: function (array) {
-      // 寻找第一个空单元的索引
-      const index = array.findIndex((_, i) => !(i in array));
-      // 如果找到空单元，则将新元素插入
-      if (index !== -1) {
-        return index;
-      } else {
-        // 如果数组中没有空单元，则将新元素追加到数组末尾
-        return array.length;
-      }
-    },
-    messageBox: null,
-    /**
-     * 在屏幕上显示指定时间长度的消息。
-     *
-     * @param {string} message - 要显示的消息。
-     * @param {number} [duration=2500] - 消息应显示的毫秒数。默认为2500毫秒。
-     * @return {void} 此函数不返回值。
-     */
-    showMessage: function (message, duration = 2500) {
-      if (!this.messageBox) {
-        this.messageBox = this.createNode(
-          `<div id="messageBox" class="c-message"></div>`
-        );
-        document.body.appendChild(this.messageBox);
-      }
-      this.messageBox.textContent = message;
-      this.messageBox.style.display = 'block'; // 显示消息
+  function findEmptyIndex(array) {
+    // 寻找第一个空单元的索引
+    const index = array.findIndex((_, i) => !(i in array));
+    // 如果找到空单元，则将新元素插入
+    if (index !== -1) {
+      return index;
+    } else {
+      // 如果数组中没有空单元，则将新元素追加到数组末尾
+      return array.length;
+    }
+  }
+  // 渲染帧优化
+  const rafDebounce = function (fn) {
+    let rafId = null;
+
+    return function (...args) {
+      rafId && cancelAnimationFrame(rafId);
+      rafId = requestAnimationFrame(() => {
+        fn.apply(this, args);
+        rafId = null;
+      });
+    };
+  };
+
+  class MessageBox extends HTMLElement {
+    constructor() {
+      super();
+
+      this.attachShadow({ mode: "open" });
+      this.shadowRoot.innerHTML = `
+        <div class="message"></div>
+        
+        <style>
+          .message {
+            position: fixed;
+            z-index: 100;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            padding: 10px 20px;
+            background-color: #333;
+            color: #fff;
+            border-radius: 5px;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
+            display: none; /* 默认隐藏 */
+          }
+        </style>
+      `;
+
+      this.message = this.shadowRoot.querySelector(".message");
+    }
+
+    show(message, duration = 2500) {
+      this.message.textContent = message;
+      this.message.style.display = "block"; // 显示消息
 
       // 设置一定时间后自动隐藏消息
       setTimeout(() => {
-        this.messageBox.style.display = 'none';
+        this.message.style.display = "none";
       }, duration);
-    },
-    /**
-     * 从提供的模板字符串创建一个新的 DOM 节点。
-     *
-     * @param {string} template - 要创建节点的 HTML 模板字符串。
-     * @return {Node} 新创建的 DOM 节点。
-     */
-    createNode: function (template) {
-      const div = document.createElement('div');
-      div.innerHTML = template.trim();
-      return div.firstChild;
-    },
-  };
-  /**
-   * 初始化函数，用于加载表格筛选。
-   *
-   */
-  function init() {
-    window.addEventListener('load', function (event) {
-      console.log('加载表格筛选');
-      renderCSS();
-      findTable();
-    });
+    }
   }
-  /**
-   * 在页面上查找所有的表格，并为每个表格添加一个按钮，当点击该按钮时，会打开搜索对话框。
-   * 该按钮位于表格的左上角。
-   *
-   * @return {void} 该函数没有返回值。
-   */
-  function findTable() {
-    const tableList = document.querySelectorAll('table');
-    if (tableList.length) {
-      document.querySelectorAll('table').forEach((tableDOM) => {
-        if (
-          tableDOM.querySelector('thead') &&
-          tableDOM.querySelector('tbody')
-        ) {
-          const thead = tableDOM.querySelector('thead');
-          const scrollDOM = utils.createNode(
-            `<div class="filter-table"></div>`
-          );
-          tableDOM.parentElement.insertBefore(scrollDOM, tableDOM);
-          tableDOM.remove();
-          scrollDOM.appendChild(tableDOM);
-          const btn = utils.createNode(
-            `<button class="open-filter-Dialog-btn" title="打开筛选弹窗">F</button>`
-          );
-          thead.appendChild(btn);
-          btn.onclick = () => showSearchDialog(tableDOM);
+
+  class SearchDialog extends HTMLElement {
+    /**
+     * WeakMap 存储结构说明：
+     *
+     * 键：table 表格元素
+     *
+     * 值：SearchTable 表格状态容器
+     */
+    weakMap = new Map();
+    form = null;
+    startX = 0;
+    startY = 0;
+    initialX = 0;
+    initialY = 0;
+    x = 0;
+    y = 0;
+
+    constructor() {
+      super();
+
+      this.attachShadow({ mode: "open" });
+      this.shadowRoot.innerHTML = `
+        <div class="searchDialog">
+          <div class="searchDialog__header">
+            <label class="searchDialog__title">搜索</label>
+            <span class="closeBtn">✕</span>
+          </div>
+    
+          <div class="searchDialog__content scroll-bar"></div>
+    
+          <div class="searchDialog__footer">
+            <label>
+              <input class="searchDialog__notClose" type="checkbox" checked/>
+              <span style="margin-left: 4px">查询后不关闭</span>
+            </label>
+            <input type="button" class="resetBtn" value="重置"/>
+            <input type="button" class="closeBtn" value="取消"/>
+            <input type="button" class="confirmBtn primary" value="确定"/>
+          </div>
+        </div>
+        
+        <style>
+          .searchDialog {
+            font-size: 12px;
+            font-family: "Microsoft YaHei", sans-serif;
+            display: none;
+            z-index: 9999;
+            flex-direction: column;
+            width: 30vw;
+            min-width: 600px;
+            box-sizing: border-box;
+            position: fixed;
+            background-color: #fff;
+            border: 1px solid #ddd;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.2);
+            border-radius: 5px;
+            user-select: none;
+          }
+          
+          .searchDialog__header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px 20px;
+            font-size: 18px;
+            cursor: move;
+          }
+          .searchDialog__header span {
+            transition: color 0.3s;
+            cursor: pointer;
+            font-size: 20px;
+          }
+          .searchDialog__header span:hover {
+            color: red;
+          }
+          
+          .searchDialog__content {
+            margin: 20px;
+            padding: 0 10px;
+            flex: 1;
+            max-height: 400px;
+            overflow-y: auto;
+            overflow-x: hidden;
+          }
+          
+          .searchDialog__footer {
+            padding: 10px;
+            display: flex;
+            justify-content: flex-end;
+            align-items: center;
+            user-select: none;
+          }
+          .searchDialog__footer > label {
+            display: flex;
+          }
+          .searchDialog__footer > label > * {
+            cursor: pointer;
+          }
+          
+          .fade-in {
+            animation: fadeIn 0.3s;
+          }
+          .fade-out {
+            animation: fadeOut 0.3s;
+          }
+          @keyframes fadeIn {
+            from {
+              opacity: 0;
+            }
+            to {
+              opacity: 1;
+            }
+          }
+          @keyframes fadeOut {
+            from {
+              opacity: 1;
+            }
+            to {
+              opacity: 0;
+            }
+          }
+          
+          input[type='button'] {
+            display: inline-block;
+            padding: 4px 10px;
+            border-radius: 4px;
+            background-color: #fff;
+            border: 1px solid #dcdfe6;
+            color: #606266;
+            text-decoration: none;
+            cursor: pointer;
+            margin-left: 10px;
+          }
+          input[type='button']:hover {
+            background-color: #f5f7fa;
+            border-color: #409eff;
+            color: #409eff;
+          }
+          input[type='button'].primary {
+            background-color: #409eff;
+            border-color: #409eff;
+            color: #fff;
+          }
+          input[type='button'].primary:hover {
+            background-color: #66b1ff;
+            border-color: #66b1ff;
+          }
+          
+          .scroll-bar {
+            overflow-y: scroll;
+          }
+          .scroll-bar::-webkit-scrollbar {
+            margin: 10px;
+            height: 10px;
+            width: 10px;
+            border: 2px solid #333; /* 设置滚动条的边框颜色 */
+          }
+          .scroll-bar::-webkit-scrollbar-track {
+            background-color: #f1f1f1;
+          }
+          .scroll-bar::-webkit-scrollbar-thumb {
+            background-color: #888;
+            border-radius: 5px;
+          }
+          .scroll-bar::-webkit-scrollbar-thumb:hover {
+            background-color: #555;
+          }
+        </style>
+      `;
+
+      this.dialog = this.shadowRoot.querySelector(".searchDialog");
+      this.content = this.shadowRoot.querySelector(".searchDialog__content");
+      this.notClose = this.dialog.querySelector(".searchDialog__notClose");
+
+      this.init();
+    }
+
+    show(table) {
+      if (!this.weakMap.has(table)) {
+        this.weakMap.set(table, new SearchTable(table));
+      }
+
+      const searchFrom = this.weakMap.get(table).searchFrom;
+
+      if (this.form !== searchFrom) {
+        this.form?.remove();
+        this.form = searchFrom;
+        this.content.appendChild(searchFrom);
+      }
+
+      requestAnimationFrame(() => {
+        this.dialog.style.display = "flex";
+        this.dialog.style.left = "calc(50% - 15vw)";
+        this.dialog.style.top = "10vh";
+        this.dialog.classList.remove("fade-out");
+        this.dialog.classList.add("fade-in");
+      });
+    }
+
+    close() {
+      this.dialog.classList.add("fade-out");
+      this.dialog.classList.remove("fade-in");
+      this.dialog.onanimationend = function () {
+        this.style.display = "none";
+        this.onanimationend = null;
+      };
+    }
+
+    init() {
+      this.initEvent();
+      this.initTable();
+    }
+
+    initEvent() {
+      // 点击事件 - footer 按钮组
+      this.dialog.addEventListener("click", async (event) => {
+        const {
+          target,
+          target: { className, tagName },
+        } = event;
+
+        if (className.includes("closeBtn")) {
+          this.close(); // 关闭
+        } else if (className.includes("resetBtn")) {
+          this.form.reset(); // 重置
+        } else if (className.includes("confirmBtn")) {
+          await this.form.confirm(); // 确定
+
+          !this.notClose.checked && this.close();
+        } else if (tagName === "INPUT" && target.type === "checkbox") {
+          target.parentElement.classList.toggle("active");
+        }
+      });
+
+      // 键盘事件 - esc 关闭弹窗
+      document.addEventListener("keydown", (event) => {
+        if (this.dialog.style.display === "flex" && event.key === "Escape")
+          this.close();
+      });
+
+      const startDrag = (event) => {
+        this.startX = event.clientX;
+        this.startY = event.clientY;
+        this.initialX = this.x;
+        this.initialY = this.y;
+
+        document.addEventListener("mousemove", onDrag);
+        document.addEventListener("mouseup", endDrag);
+      };
+      const onDrag = rafDebounce((event) => {
+        event.preventDefault();
+
+        const dx = event.clientX - this.startX;
+        const dy = event.clientY - this.startY;
+        this.x = this.initialX + dx;
+        this.y = this.initialY + dy;
+
+        this.dialog.style.transform = `translate(${this.x}px, ${this.y}px)`;
+      });
+      const endDrag = () => {
+        document.removeEventListener("mousemove", onDrag);
+        document.removeEventListener("mouseup", endDrag);
+      };
+
+      // 拖动事件
+      this.dialog
+        .querySelector(".searchDialog__header")
+        .addEventListener("mousedown", startDrag);
+    }
+
+    initTable() {
+      document.querySelectorAll("table").forEach((table) => {
+        const thead = table.querySelector("thead");
+        const tbody = table.querySelector("tbody");
+
+        if (thead && tbody) {
+          const parent = table.parentElement;
+          parent.classList.add("filter-table");
+          const template_style = document.createElement("template");
+
+          table.classList.add("scroll-bar");
+          template_style.innerHTML = `
+            <style>
+              table {
+                position: relative;
+                max-height: 50vh;
+                overflow-y: auto !important;
+              }
+              .scroll-bar {
+                overflow-y: scroll;
+              }
+              .scroll-bar::-webkit-scrollbar {
+                margin: 10px;
+                height: 10px;
+                width: 10px;
+                border: 2px solid #333; /* 设置滚动条的边框颜色 */
+              }
+              .scroll-bar::-webkit-scrollbar-track {
+                background-color: #f1f1f1;
+              }
+              .scroll-bar::-webkit-scrollbar-thumb {
+                background-color: #888;
+                border-radius: 5px;
+              }
+              .scroll-bar::-webkit-scrollbar-thumb:hover {
+                background-color: #555;
+              }
+            </style>
+          `;
+          document.head.appendChild(template_style.content);
+
+          const wrapper = document.createElement("div");
+          const shadow = wrapper.attachShadow({ mode: "open" });
+
+          shadow.innerHTML = `
+            <button class="open-filter-Dialog-btn" title="打开筛选弹窗">F</button>
+            <style>
+              button {
+                position: absolute;
+                top: 0;
+                left: 0;
+                width: 20px;
+                height: 20px;
+                line-height: 20px;
+                padding: 0 4px;
+                background-color: #fff;
+                border: 1px solid #409eff;
+                cursor: pointer;
+              }
+            </style>
+          `;
+          shadow.querySelector("button").onclick = () => this.show(table);
+
+          thead.appendChild(wrapper);
         }
       });
     }
   }
 
-  const showSearchDialog = (function () {
-    const weakMap = new WeakMap();
+  class SearchFrom extends HTMLElement {
+    table = null;
+    filterMap = null;
 
-    /**
-     * 从给定的表格 DOM 元素中解析表格数据。
-     *
-     * @param {Element} tableDOM - 要解析的表格 DOM 元素。
-     * @return {Object} 包含解析后的数据、表头、过滤器映射和表单 DOM 的对象。
-     */
-    function parse(tableDOM) {
+    constructor() {
+      super();
+      this.attachShadow({ mode: "open" });
+      this.shadowRoot.innerHTML = `
+        <article class="filter_form">
+          <span class="add">添加</span>
+    
+          <form></form>
+        </article>
+        
+        <style>
+          .filter_form {
+            font-size: 12px;
+          }
+          .filter_form form {
+            position: relative;
+            margin-top: 4px;
+          }
+          .filter_form .add,
+          .filter_form .del {
+            user-select: none;
+            cursor: pointer;
+          }
+        </style>
+      `;
+
+      this.article = this.shadowRoot.querySelector("article");
+      this.form = this.shadowRoot.querySelector("form");
+      this.init();
+    }
+
+    init() {
+      this.initEvent();
+    }
+
+    initEvent() {
+      this.article.addEventListener("wheel", (event) => {
+        const innerElement = event.composedPath()[0];
+
+        if (innerElement.tagName === "SELECT") {
+          event.preventDefault();
+
+          const length = innerElement.options.length;
+          const index = innerElement.selectedIndex;
+          const direction = event.wheelDeltaY > 0 ? "up" : "down";
+
+          innerElement.selectedIndex =
+            direction === "up"
+              ? index === 0
+                ? length - 1
+                : index - 1
+              : index === length - 1
+                ? 0
+                : index + 1;
+        }
+      });
+      this.article.addEventListener("click", (event) => {
+        const innerElement = event.composedPath()[0];
+
+        if (innerElement.className.includes("add")) {
+          this.addSearchInput();
+        } else if (innerElement.className.includes("del")) {
+          // 删除规则
+          innerElement.parentNode.remove();
+        }
+      });
+
+      this.article.addEventListener("input", (event) => {
+        const innerElement = event.composedPath()[0];
+
+        if (innerElement.tagName === "INPUT") {
+          innerElement.value
+            ? innerElement.classList.remove("error")
+            : innerElement.classList.add("error");
+        }
+      });
+    }
+
+    reset() {
+      this.form.innerHTML = "";
+    }
+
+    async confirm() {
+      try {
+        this.formTrim();
+        await this.validate();
+        this.filter();
+      } catch (e) {
+        console.error(e);
+      }
+    }
+
+    addSearchInput() {
+      const searchInput = document.createElement("search-input");
+      searchInput.setAttribute(
+        "options",
+        JSON.stringify([...this.filterMap.keys()]),
+      );
+      searchInput.filterMap = this.filterMap;
+      this.form.appendChild(searchInput);
+    }
+
+    formTrim() {
+      this.form.querySelectorAll("input[type=text]").forEach((input) => {
+        input.value = input.value.includes(",")
+          ? input.value
+              .split(",")
+              .map((n) => n.trim())
+              .filter((n) => n)
+              .join(", ")
+          : input.value.trim();
+      });
+    }
+
+    validate() {
+      let flag = true;
+
+      this.form.childNodes.forEach((node) => {
+        const { checkbox, input } = node;
+        if (checkbox.checked && !input.value) {
+          flag = false;
+          input.classList.add("error", "shake");
+        } else {
+          input.classList.remove("error");
+        }
+      });
+
+      return new Promise((resolve, reject) => {
+        if (flag) {
+          resolve();
+        } else {
+          messageBox.show("表单验证未通过");
+          reject(new Error("表单验证未通过"));
+        }
+      });
+    }
+
+    getRules() {
+      const rules_AND = [];
+      const rules_OR = [];
+      const rules_NOT = [];
+
+      this.form.childNodes.forEach((node) => {
+        const { checkbox, select1, select2, input } = node;
+
+        if (checkbox.checked) {
+          const rules = input.value.split(",").map((keyword) => ({
+            keyword: keyword.trim(),
+            colIndexs: Array.from(this.filterMap.get(select2.value)),
+          }));
+
+          switch (select1.value) {
+            case "AND":
+              rules_AND.push(...rules);
+              break;
+            case "OR":
+              rules_OR.push(...rules);
+              break;
+            case "NOT":
+              rules_NOT.push(...rules);
+              break;
+          }
+        }
+      });
+
+      return { rules_AND, rules_OR, rules_NOT };
+    }
+
+    filter() {
+      const data = this.table.searchTable.data;
+      const rules = this.getRules();
+      const trList = Array.from(this.table.querySelector("tbody").children);
+      let count = 0;
+
+      // 筛选
+      data.forEach((trData, i) => {
+        if (this.isVisible(trData, rules)) {
+          trList[i].style.display = "";
+          count++;
+        } else {
+          trList[i].style.display = "none";
+        }
+      });
+
+      messageBox.show(`搜索成功,一共查询出 ${count} 数据`);
+    }
+    // 根据给定的规则确定表格行是否可见
+    isVisible(trData, rules) {
+      const { rules_AND, rules_OR, rules_NOT } = rules;
+
+      const isVisible_AND =
+        rules_AND.length &&
+        rules_AND.every((rule) => {
+          const { keyword, colIndexs } = rule;
+          return colIndexs.some((index) => trData?.[index]?.includes(keyword));
+        });
+      const isVisible_OR =
+        rules_OR.length &&
+        rules_OR.some((rule) => {
+          const { keyword, colIndexs } = rule;
+          return colIndexs.some((index) => trData?.[index]?.includes(keyword));
+        });
+      const isVisible_NOT = rules_NOT.length
+        ? rules_NOT.every((rule) => {
+            const { keyword, colIndexs } = rule;
+            return !colIndexs.some((index) =>
+              trData?.[index]?.includes(keyword),
+            );
+          })
+        : true;
+
+      return (
+        isVisible_NOT &&
+        (rules_AND.length || rules_OR.length
+          ? isVisible_AND || isVisible_OR
+          : true)
+      );
+    }
+  }
+
+  class SearchInput extends HTMLElement {
+    static get observedAttributes() {
+      return ["options"];
+    }
+
+    options = [];
+    filterMap = null;
+
+    constructor() {
+      super();
+      this.attachShadow({ mode: "open" });
+      this.shadowRoot.innerHTML = `
+        <div class="form-example active">
+          <input type="checkbox" checked>
+  
+          <select>
+            <option label="AND" value="AND"></option>
+            <option label="OR" value="OR"></option>
+            <option label="NOT" value="NOT"></option>
+          </select>
+    
+          <select></select>
+    
+          <input type="text"/>
+    
+          <span class="del">删除</span>
+        </div>
+        
+        <style>
+          .form-example {
+            display: flex;
+            align-items: center;
+            margin: 0 -4px 6px;
+          }
+          .form-example > * {
+            margin: 0 4px;
+          }
+          .form-example:not(.active) * {
+            border-color: #d9d9d9;
+            color: #d9d9d9;
+          }
+          input[type='text'] {
+            flex: 1;
+          }
+          input[type='text'].error {
+            border-color: red;
+          }
+          input[type='text'].shake {
+            animation: shake 0.6s ease-in-out 1;
+          }
+          
+          select, input[type='text'] {
+            box-sizing: border-box;
+            height: 32px;
+            padding: 4px 11px;
+            border-radius: 4px;
+            border: 1px solid #d9d9d9;
+            transition: all 0.3s;
+          }
+          select:focus, input:focus {
+            outline: none;
+            border-color: #4096ff;
+            border-inline-end-width: 1px;
+          }
+          select:hover, input:hover {
+            border-color: #4096ff;
+            border-inline-end-width: 1px;
+          }
+          
+          @keyframes shake {
+            0% { transform: translateX(0); }
+            25% { transform: translateX(-6px); }
+            50% { transform: translateX(4px); }
+            75% { transform: translateX(-2px); }
+            100% { transform: translateX(0); }
+          }
+        </style>
+      `;
+
+      this.example = this.shadowRoot.querySelector(".form-example");
+      this.checkbox = this.shadowRoot.querySelector("input[type='checkbox']");
+      this.select1 = this.shadowRoot.querySelector("select:nth-child(2)");
+      this.select2 = this.shadowRoot.querySelector("select:nth-child(3)");
+      this.input = this.shadowRoot.querySelector("input[type='text']");
+      this.del = this.shadowRoot.querySelector(".del");
+
+      this.init();
+    }
+
+    attributeChangedCallback(attrName, oldVal, newVal) {
+      if (attrName === "options") {
+        this.options = JSON.parse(newVal);
+        this.select2.innerHTML = this.options
+          .map((n) => `<option label="${n}" value="${n}"></option>`)
+          .join("");
+      }
+    }
+
+    init() {
+      this.initEvent();
+    }
+
+    initEvent() {
+      this.checkbox.onclick = () => {
+        this.example.classList.toggle("active");
+      };
+      this.example.onanimationend = function (event) {
+        const innerElement = event.composedPath()[0];
+
+        if (innerElement.className.includes("shake")) {
+          innerElement.classList.remove("shake");
+        }
+      };
+    }
+  }
+
+  class SearchTable {
+    constructor(table) {
+      this.table = table;
+      table.searchTable = this;
+
+      const { header, filterMap } = this.parseTable(table);
+      this.header = header;
+      this.filterMap = filterMap;
+      this.searchFrom = document.createElement("search-from");
+      this.searchFrom.table = table;
+      this.searchFrom.filterMap = filterMap;
+    }
+
+    parseTable(table) {
+      const thead = table.querySelector("thead");
+      if (!thead) {
+        throw new Error("缺少表头");
+      }
+
       let header = []; // 表头数据
-
-      // 解析表头
-      tableDOM.querySelectorAll('thead tr').forEach((trDOM) => {
+      thead.querySelectorAll("tr").forEach((tr) => {
         header.push(
-          Array.from(trDOM.querySelectorAll('th')).map((n) => {
+          Array.from(tr.querySelectorAll("th")).map((n) => {
             return {
               label: n.textContent,
               rowspan: n.rowSpan ?? 1, // 高度
               colspan: n.colSpan ?? 1, // 宽度
             };
-          })
+          }),
         );
       });
 
-      // 每次筛选时，动态解析表格数据，防止表格排序导致顺序变化
-      const getData = () => {
-        return Array.from(tableDOM.querySelectorAll('tbody tr')).map(
-          (trDOM) => {
-            return Array.from(trDOM.querySelectorAll('td')).map((n) => {
-              return n.textContent;
-            });
-          }
-        );
-      };
-
-      let dp = new Array(header.length).fill(0).map((n) => new Array()); // 多级表头结构
-
+      let dp = new Array(header.length).fill(0).map(() => []);
       header.forEach((tr, i) => {
-        tr.forEach((td, j) => {
-          const index = utils.findEmptyIndex(dp[i]);
+        tr.forEach((td) => {
+          const index = findEmptyIndex(dp[i]);
           const { colspan, rowspan } = td;
 
           for (let k = i; k < i + rowspan; k++) {
@@ -177,714 +818,28 @@
         }
       }
 
-      const formDOM = renderForm({ filterMap, getData, tableDOM });
-
-      return weakMap
-        .set(tableDOM, { header, filterMap, formDOM })
-        .get(tableDOM);
+      return { header, filterMap };
     }
 
-    return function (tableDOM) {
-      if (!searchDialogDOM) {
-        searchDialogDOM = renderDialog();
-        document.body.appendChild(searchDialogDOM);
-      }
-      const { formDOM } = weakMap.has(tableDOM)
-        ? weakMap.get(tableDOM)
-        : parse(tableDOM);
-
-      const content = searchDialogDOM.querySelector('.content');
-
-      content.childNodes.forEach((node) => {
-        content.removeChild(node);
-      });
-      content.appendChild(formDOM);
-      searchDialogDOM._show();
-    };
-  })();
-
-  /**
-   * 渲染一个带有搜索功能的对话框。
-   *
-   * @return {HTMLElement} 渲染的对话框。
-   */
-  function renderDialog() {
-    // 主体
-    const dialog = utils.createNode(`
-      <div id="searchDialog" style="display: none">
-        <div class="searchDialog__header" draggable="true">
-          <label class="searchDialog__title">搜索</label>
-          <span class="closeBtn">✕</span>
-        </div>
-  
-        <div class="content scroll-bar"></div>
-  
-        <div class="searchDialog__footer">
-          <label>
-            <input class="searchDialog__notClose" type="checkbox" checked/>
-            <span style="margin-left: 4px">查询后不关闭</span>
-          </label>
-          <input type="button" class="setMaxHeight" value="表格最大高度开关"></input>
-          <input type="button" class="resetBtn" value="重置"></input>
-          <input type="button" class="closeBtn" value="取消"></input>
-          <input type="button" class="confirmBtn primary" value="确定"></input>
-        </div>
-      </div>
-    `);
-    const header = dialog.querySelector('.searchDialog__header');
-
-    // 方法
-    dialog._show = () => {
-      dialog.style.display = 'block';
-      dialog.style.left = 'calc(50% - 15vw)';
-      dialog.style.top = '10vh';
-      dialog.classList.remove('fade-out');
-      dialog.classList.add('fade-in');
-    };
-    dialog._hidden = () => {
-      dialog.classList.add('fade-out');
-      dialog.classList.remove('fade-in');
-      dialog.onanimationend = () => {
-        dialog.style.display = 'none';
-        dialog.onanimationend = null;
-      };
-    };
-
-    // 事件
-    dialog.addEventListener('click', (event) => {
-      const {
-        target,
-        target: { className, tagName },
-      } = event;
-
-      if (className.includes('closeBtn')) {
-        // 关闭
-        dialog._hidden();
-      } else if (className.includes('resetBtn')) {
-        // 重置
-        document.dispatchEvent(
-          new CustomEvent('btnEvent', { detail: { type: 'reset' } })
-        );
-      } else if (className.includes('confirmBtn')) {
-        // 确定
-        const notClose = dialog.querySelector(
-          'input[type=checkbox].searchDialog__notClose'
-        ).checked;
-        document.dispatchEvent(
-          new CustomEvent('btnEvent', { detail: { type: 'confirm', notClose } })
-        );
-      } else if (tagName === 'INPUT' && target.type === 'checkbox') {
-        target.parentElement.classList.toggle('active');
-      } else if (className.includes('setMaxHeight')) {
-        document.dispatchEvent(
-          new CustomEvent('btnEvent', { detail: { type: 'setMaxHeight' } })
-        );
-      }
-    });
-    // 监听键盘按下事件
-    document.addEventListener('keydown', (event) => {
-      if (dialog.style.display === 'block' && event.key === 'Escape')
-        dialog._hidden();
-    });
-
-    let offsetX, offsetY;
-    header.addEventListener('dragstart', (event) => {
-      event.dataTransfer.effectAllowed = 'move';
-
-      // 获取拖动开始时鼠标相对于拖动元素的偏移
-      offsetX = event.clientX - header.getBoundingClientRect().left;
-      offsetY = event.clientY - header.getBoundingClientRect().top;
-    });
-    header.addEventListener('drag', function (event) {
-      if (event.clientX && event.clientY) {
-        // 计算拖动后的位置
-        const x = event.clientX - offsetX;
-        const y = event.clientY - offsetY;
-
-        // 设置拖动元素的新位置
-        dialog.style.left = x + 'px';
-        dialog.style.top = y + 'px';
-      } else {
-        dialog.style.left = 'calc(50% - 15vw)';
-        dialog.style.top = '10vh';
-      }
-    });
-    header.addEventListener('dragover', function (event) {
-      event.preventDefault();
-    });
-
-    return dialog;
-  }
-  /**
-   * 根据提供的数据和表格 DOM 渲染一个带有筛选选项的表单。
-   *
-   * @param {Object} filterMap - 筛选选项的映射。
-   * @param {Array} data - 用于筛选的数据。
-   * @param {HTMLElement} tableDOM - 表格的 DOM 元素。
-   * @return {HTMLElement} 带有筛选选项的表单的 DOM 元素。
-   */
-  function renderForm({ filterMap, getData, tableDOM }) {
-    const formDOM = utils.createNode(`
-      <article class="filter_form">
-        <span class="add">添加</span>
-  
-        <form></form>
-      </article>
-    `);
-    const inputDOM = utils.createNode(`
-      <div class="form-example active">
-        <input type="checkbox" checked>
-
-        <select>
-          <option label="AND" value="AND"></option>
-          <option label="OR" value="OR"></option>
-          <option label="NOT" value="NOT"></option>
-        </select>
-  
-        <select>
-        ${[...filterMap.keys()]
-          .map((n) => `<option label="${n}" value="${n}"></option>`)
-          .join('')}
-        </select>
-  
-        <input type="text"/>
-  
-        <span class="del">删除</span>
-      </div>
-    `);
-    const form = formDOM.querySelector('form');
-
-    function formTrim() {
-      form.querySelectorAll('input[type=text]').forEach((input) => {
-        input.value = input.value.includes(',')
-          ? input.value
-              .split(',')
-              .map((n) => n.trim())
-              .filter((n) => n)
-              .join(', ')
-          : input.value.trim();
-      });
-    }
-    /**
-     * 验证表单，检查所有输入字段是否有值。
-     *
-     * @return {Promise} 如果所有输入字段都有值，则解析；否则拒绝
-     */
-    function validate() {
-      let flag = true;
-
-      form.childNodes.forEach((node) => {
-        const [checkbox, , , input] = node.children;
-        if (checkbox.checked && !input.value) {
-          flag = false;
-          input.classList.add('error', 'shake');
-        } else {
-          input.classList.remove('error');
-        }
-      });
-
-      return new Promise((resolve, reject) => {
-        if (flag) {
-          resolve();
-        } else {
-          utils.showMessage('表单验证未通过');
-          reject(new Error('表单验证未通过'));
-        }
-      });
-    }
-    /**
-     * 从表单中获取过滤规则。
-     *
-     * @return {Object} 包含过滤规则的对象。该对象有三个属性：
-     *                  - rulse_AND：表示并且过滤规则的数组。每个对象有两个属性：
-     *                    - keyword：表示要过滤的关键字的字符串。
-     *                    - colIndexs：表示要过滤的列索引的数组。
-     *                  - rulse_OR：表示或者过滤规则的数组。结构与rulse_AND相同。
-     *                  - rulse_NOT：表示非过滤规则的数组。结构与rulse_AND相同。
-     */
-    function getRules() {
-      const rulse_AND = [];
-      const rulse_OR = [];
-      const rulse_NOT = [];
-
-      form.childNodes.forEach((node) => {
-        const [checkbox, select1, select2, input] = node.children;
-
-        if (checkbox.checked) {
-          const rules = input.value.split(',').map((keyword) => ({
-            keyword: keyword.trim(),
-            colIndexs: Array.from(filterMap.get(select2.value)),
-          }));
-
-          switch (select1.value) {
-            case 'AND':
-              rulse_AND.push(...rules);
-              break;
-            case 'OR':
-              rulse_OR.push(...rules);
-              break;
-            case 'NOT':
-              rulse_NOT.push(...rules);
-              break;
-          }
-        }
-      });
-
-      return {
-        rulse_AND,
-        rulse_OR,
-        rulse_NOT,
-      };
-    }
-    /**
-     * 根据给定的规则确定表格行是否可见。
-     *
-     * @param {Array} trData - 表格行数据。
-     * @param {Object} rules - 过滤规则。
-     * @param {Array} rules.rulse_AND - AND 过滤规则。
-     * @param {Array} rules.rulse_OR - OR 过滤规则。
-     * @param {Array} rules.rulse_NOT - NOT 过滤规则。
-     * @param {Object} rules.rulse_AND[].rule - AND 过滤规则。
-     * @param {string} rules.rulse_AND[].rule.keyword - 过滤关键字。
-     * @param {Array} rules.rulse_AND[].rule.colIndexs - 过滤列索引。
-     * @param {Object} rules.rulse_OR[].rule - OR 过滤规则。
-     * @param {string} rules.rulse_OR[].rule.keyword - 过滤关键字。
-     * @param {Array} rules.rulse_OR[].rule.colIndexs - 过滤列索引。
-     * @param {Object} rules.rulse_NOT[].rule - NOT 过滤规则。
-     * @param {string} rules.rulse_NOT[].rule.keyword - 过滤关键字。
-     * @param {Array} rules.rulse_NOT[].rule.colIndexs - 过滤列索引。
-     * @return {boolean} 如果表格行可见，则为 true，否则为 false。
-     */
-    const isVisible = function (trData, rules) {
-      const { rulse_AND, rulse_OR, rulse_NOT } = rules;
-
-      const isVisible_AND =
-        rulse_AND.length &&
-        rulse_AND.every((rule) => {
-          const { keyword, colIndexs } = rule;
-          return colIndexs.some((index) => trData?.[index]?.includes(keyword));
+    get data() {
+      return Array.from(this.table.querySelectorAll("tbody > tr")).map((tr) => {
+        return Array.from(tr.querySelectorAll("td")).map((n) => {
+          return n.textContent;
         });
-      const isVisible_OR =
-        rulse_OR.length &&
-        rulse_OR.some((rule) => {
-          const { keyword, colIndexs } = rule;
-          return colIndexs.some((index) => trData?.[index]?.includes(keyword));
-        });
-      const isVisible_NOT = rulse_NOT.length
-        ? rulse_NOT.every((rule) => {
-            const { keyword, colIndexs } = rule;
-            return !colIndexs.some((index) =>
-              trData?.[index]?.includes(keyword)
-            );
-          })
-        : true;
-
-      return (
-        isVisible_NOT &&
-        (rulse_AND.length || rulse_OR.length
-          ? isVisible_AND || isVisible_OR
-          : true)
-      );
-    };
-    /**
-     * 处理根据给定规则筛选表格行。如果提供了规则，
-     * 则根据规则筛选表格行，并显示成功消息以及筛选行数。
-     * 如果没有提供规则，则重置所有表格行的可见性，并显示成功消息以及全部行数。
-     *
-     * @return {void} 此函数不返回任何内容。
-     */
-    function handleFilter() {
-      const data = getData();
-      const rules = getRules();
-      const trList = Array.from(tableDOM.querySelector('tbody').children);
-      let count = 0;
-
-      // 筛选
-      data.forEach((trData, i) => {
-        if (isVisible(trData, rules)) {
-          trList[i].style.visibility = 'visible';
-          count++;
-        } else {
-          trList[i].style.visibility = 'collapse';
-        }
       });
-
-      utils.showMessage(`搜索成功,一共查询出 ${count} 数据`);
     }
-
-    form.addEventListener('submit', async (event) => {
-      try {
-        event.preventDefault();
-        formTrim();
-        await validate();
-        handleFilter();
-        searchDialogDOM._hidden();
-      } catch (e) {
-        console.error(e);
-      }
-    });
-    formDOM.addEventListener('wheel', (event) => {
-      if (event.target.tagName === 'SELECT') {
-        event.preventDefault();
-
-        const length = event.target.options.length;
-        const index = event.target.selectedIndex;
-        const direction = event.wheelDeltaY > 0 ? 'up' : 'down';
-
-        event.target.selectedIndex =
-          direction === 'up'
-            ? index === 0
-              ? length - 1
-              : index - 1
-            : index === length - 1
-            ? 0
-            : index + 1;
-      }
-    });
-    formDOM.addEventListener('click', (event) => {
-      if (event.target.className.includes('add')) {
-        form.appendChild(inputDOM.cloneNode(true));
-      } else if (event.target.className.includes('del')) {
-        // 删除规则
-        event.target.parentNode.remove();
-      }
-    });
-    formDOM.addEventListener('animationend', (event) => {
-      if (event.target.className.includes('shake')) {
-        event.target.classList.remove('shake');
-      }
-    });
-    formDOM.addEventListener('input', (event) => {
-      if (event.target.tagName === 'INPUT') {
-        event.target.value
-          ? event.target.classList.remove('error')
-          : event.target.classList.add('error');
-      }
-    });
-    document.addEventListener('btnEvent', async (event) => {
-      if (formDOM.parentElement) {
-        switch (event?.detail?.type) {
-          case 'confirm':
-            try {
-              formTrim();
-              await validate();
-              handleFilter();
-              if (!event?.detail?.notClose) {
-                searchDialogDOM._hidden();
-              }
-            } catch (e) {
-              console.error(e);
-            }
-
-            break;
-          case 'reset':
-            form.innerHTML = '';
-            break;
-          case 'setMaxHeight':
-            tableDOM.parentElement.classList.toggle('scroll-bar')
-              ? utils.showMessage('设置滚动条')
-              : utils.showMessage('恢复原状');
-            break;
-        }
-      }
-    });
-
-    return formDOM;
-  }
-  // 放弃。todo （不定高）虚拟滚动
-  function renderTable(header, dataSource) {
-    const container = utils.createNode(`
-      <div class="c-table">
-        <div class="c-table__content scroll-bar">
-          <table>
-            <colgroup></colgroup>
-  
-            <thead></thead>
-  
-            <tbody></tbody>
-          </table>
-        </div>
-      </div>
-    `);
-
-    const tableDOM = container.querySelector('table');
-    const colgroupDOM = container.querySelector('colgroup');
-    const thDOM = container.querySelector('thead');
-    const tbDOM = container.querySelector('tbody');
-
-    // 根据表头计算colgroup
-    let i = 23;
-    while (i--) {
-      let colDOM = document.createElement('col');
-      colDOM.setAttribute('width', '100px');
-      colgroupDOM.appendChild(colDOM);
-    }
-    window.colgroupDOM = colgroupDOM;
-    tableDOM.style.width = 23 * 100 + 'px';
-
-    // 渲染表头
-    header.forEach((tr) => {
-      let trDOM = document.createElement('tr');
-      thDOM.appendChild(trDOM);
-
-      tr.forEach((td) => {
-        let thDOM = document.createElement('th');
-        trDOM.appendChild(thDOM);
-        thDOM.innerHTML = td.label;
-
-        thDOM.rowspan = td.rowspan;
-        thDOM.colspan = td.colspan;
-        thDOM.setAttribute('rowspan', td.rowspan);
-        thDOM.setAttribute('colspan', td.colspan);
-      });
-    });
-
-    // 渲染表体
-    dataSource.forEach((td) => {
-      let trDOM = document.createElement('tr');
-
-      trDOM.innerHTML = td.map((n) => `<td><p>${n}</p></td>`).join('');
-      tbDOM.appendChild(trDOM);
-    });
-
-    return container;
-  }
-  /**
-   * 渲染搜索对话框和页面上其他元素的CSS样式。
-   *
-   * @return {void} 此函数不返回任何内容。
-   */
-  function renderCSS() {
-    let style = utils.createNode(`
-    <style>
-      /* 滚动条样式 */
-      .scroll-bar {
-        overflow-y: scroll;
-      }
-      .scroll-bar::-webkit-scrollbar {
-        margin: 10px;
-        height: 10px;
-        width: 10px;
-        border: 2px solid #333; /* 设置滚动条的边框颜色 */
-      }
-      .scroll-bar::-webkit-scrollbar-track {
-        background-color: #f1f1f1;
-      }
-      .scroll-bar::-webkit-scrollbar-thumb {
-        background-color: #888;
-        border-radius: 5px;
-      }
-      .scroll-bar::-webkit-scrollbar-thumb:hover {
-        background-color: #555;
-      }
-
-      /* 表格样式 */
-      .filter-table.scroll-bar {
-        max-height: 80vh;
-      }
-      .filter-table table {
-      }
-      .filter-table table thead {
-        position: sticky;
-        top: 0;
-      }
-      .filter-table button.open-filter-Dialog-btn {
-        position: absolute;
-        top: 0;
-        left: 0;
-        width: 20px;
-        height: 20px;
-        line-height: 20px;
-        padding: 0 4px;
-        background-color: #fff;
-        border: 1px solid #409eff;
-      }
-  
-      /* 弹窗样式 */
-      #searchDialog {
-        font-size: 12px;
-        font-family: "Microsoft YaHei", sans-serif;
-        display: flex;
-        z-index: 9999;
-        flex-direction: column;
-        width: 30vw;
-        min-width: 600px;
-        box-sizing: border-box;
-        position: fixed;
-        background-color: #fff;
-        border: 1px solid #ddd;
-        box-shadow: 0 0 10px rgba(0, 0, 0, 0.2);
-        border-radius: 5px;
-      }
-      #searchDialog .searchDialog__header {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        padding: 10px 20px;
-        font-size: 18px;
-      }
-      #searchDialog .searchDialog__header span {
-        transition: color 0.3s;
-        cursor: pointer;
-        font-size: 20px;
-      }
-      #searchDialog .searchDialog__header span:hover {
-        color: red;
-      }
-      #searchDialog .content {
-        margin: 20px;
-        padding: 0 10px;
-        flex: 1;
-        max-height: 400px;
-        overflow-y: auto;
-        overflow-x: hidden;
-      }
-      #searchDialog .searchDialog__footer {
-        padding: 10px;
-        display: flex;
-        justify-content: flex-end;
-        align-items: center;
-        user-select: none;
-      }
-      #searchDialog .searchDialog__footer > label {
-        display: flex;
-      }
-      #searchDialog .searchDialog__footer > label > * {
-        cursor: pointer;
-      }
-      /* CSS 过渡效果 */
-      #searchDialog.fade-in {
-        animation: fadeIn 0.3s;
-      }
-      #searchDialog.fade-out {
-        animation: fadeOut 0.3s;
-      }
-  
-      @keyframes fadeIn {
-        from {
-          opacity: 0;
-        }
-        to {
-          opacity: 1;
-        }
-      }
-      @keyframes fadeOut {
-        from {
-          opacity: 1;
-        }
-        to {
-          opacity: 0;
-        }
-      }
-  
-      .c-message {
-        position: fixed;
-        top: 20px;
-        left: 50%;
-        transform: translateX(-50%);
-        padding: 10px 20px;
-        background-color: #333;
-        color: #fff;
-        border-radius: 5px;
-        box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
-        display: none; /* 默认隐藏 */
-      }
-  
-      /* 表单样式 */
-      #searchDialog article.filter_form {
-        font-size: 12px;
-      }
-      #searchDialog article.filter_form form {
-        position: relative;
-        margin-top: 4px;
-      }
-      #searchDialog article.filter_form .add,
-      #searchDialog article.filter_form .del {
-        user-select: none;
-        cursor: pointer;
-      }
-      #searchDialog article.filter_form form .form-example {
-        display: flex;
-        align-items: center;
-        margin: 0 -4px;
-        margin-bottom: 6px;
-      }
-      #searchDialog article.filter_form form .form-example > * {
-        margin: 0 4px;
-      }
-      #searchDialog article.filter_form form .form-example input[type='text'] {
-        flex: 1;
-      }
-      #searchDialog article.filter_form form .form-example input[type='text'].error {
-        border-color: red;
-      }
-      #searchDialog article.filter_form form .form-example input[type='text'].shake {
-        animation: shake 0.6s ease-in-out 1;
-      }
-      #searchDialog article.filter_form form .form-example:not(.active) * {
-        border-color: #d9d9d9;
-        color: #d9d9d9;
-      }
-      @keyframes shake {
-        0% { transform: translateX(0); }
-        25% { transform: translateX(-6px); }
-        50% { transform: translateX(4px); }
-        75% { transform: translateX(-2px); }
-        100% { transform: translateX(0); }
-      }
-  
-      /* 组件样式 */
-      #searchDialog select,
-      #searchDialog input[type='text'] {
-        box-sizing: border-box;
-        height: 32px;
-        padding: 4px 11px;
-        border-radius: 4px;
-        border: 1px solid #d9d9d9;
-        transition: all 0.3s;
-      }
-      #searchDialog select:focus,
-      #searchDialog input:focus {
-        outline: none;
-        border-color: #4096ff;
-        border-inline-end-width: 1px;
-      }
-      #searchDialog select:hover,
-      #searchDialog input:hover {
-        border-color: #4096ff;
-        border-inline-end-width: 1px;
-      }
-  
-      #searchDialog input[type='button'] {
-        display: inline-block;
-        padding: 4px 10px;
-        border-radius: 4px;
-        background-color: #fff;
-        border: 1px solid #dcdfe6;
-        color: #606266;
-        text-decoration: none;
-        cursor: pointer;
-        margin-left: 10px;
-      }
-      #searchDialog input[type='button']:hover {
-        background-color: #f5f7fa;
-        border-color: #409eff;
-        color: #409eff;
-      }
-      #searchDialog input[type='button'].primary {
-        background-color: #409eff;
-        border-color: #409eff;
-        color: #fff;
-      }
-      #searchDialog input[type='button'].primary:hover {
-        background-color: #66b1ff;
-        border-color: #66b1ff;
-      }
-    </style>
-    `);
-
-    document.head.appendChild(style);
   }
 
-  init();
+  customElements.define("message-box", MessageBox);
+  customElements.define("search-dialog", SearchDialog);
+  customElements.define("search-from", SearchFrom);
+  customElements.define("search-input", SearchInput);
+
+  const messageBox = document.createElement("message-box");
+  document.body.appendChild(messageBox);
+
+  window.addEventListener("load", function (event) {
+    const searchDialog = document.createElement("search-dialog");
+    document.body.appendChild(searchDialog);
+  });
 })();
